@@ -1,1 +1,320 @@
-Paste code when done
+import cv2
+import mediapipe as mp
+import pyttsx3
+import os
+import time
+import threading
+import pyautogui
+import random
+import speech_recognition as sr
+import time
+import ctypes
+
+def set_wallpaper(image_path):
+    ctypes.windll.user32.SystemParametersInfoW(20, 0, image_path, 3)
+
+
+def listen_to_user():
+    recognizer = sr.Recognizer()
+    with sr.Microphone() as source:
+        print("Listening...")
+        recognizer.adjust_for_ambient_noise(source)
+        audio = recognizer.listen(source)
+    try:
+        user_input = recognizer.recognize_google(audio)
+        print(f"You said: {user_input}")
+        return user_input
+    except sr.UnknownValueError:
+        print("Sorry, I didn't catch that.")
+        return None
+    except sr.RequestError:
+        print("Speech service is down.")
+        return None
+
+def get_chatbot_response(user_input):
+    if not user_input:
+        return "Sorry, I didn't catch that."
+
+    user_input = user_input.lower()
+
+    if "hello" in user_input or "hi" in user_input:
+        return random.choice([
+            "Hello, sir.",
+            "Hi there, sir.",
+            "Greetings, sir.",
+            "Good to see you, sir."
+        ])
+    elif "wassup" in user_input or "what's up" in user_input:
+        return random.choice([
+            "All systems are running smoothly, sir.",
+            "Standing by for your command, sir.",
+            "Ready and operational, sir.",
+            "Nothing much, just waiting to assist you, sir."
+        ])
+    else:
+        return random.choice([
+            "I'm here, sir.",
+            "At your service.",
+            "How can I assist you today?",
+            "Processing your request, sir.",
+            "Of course, sir.",
+            "Right away."
+        ])
+
+
+
+# --- Setup ---
+engine = pyttsx3.init()
+engine.setProperty('rate', 180)
+
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7)
+mp_draw = mp.solutions.drawing_utils
+
+cap = cv2.VideoCapture(0)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+chatbot_mode = False
+
+# --- Voice ---
+responses = [
+    "All systems nominal, sir.",
+    "Dashboard linked, sir.",
+    "Depth calibration complete, sir.",
+    "Laser targeting operational, sir.",
+    "Awaiting touch interface, sir.",
+    "Hover detection engaged, sir.",
+    "Box picked up, sir.",
+    "Panel secured, sir.",
+    "Gaming mode engaged. Lights on, sir."
+]
+
+def speak_response(text):
+    threading.Thread(target=lambda: (engine.say(text), engine.runAndWait())).start()
+
+def say_random_response():
+    global last_response_time
+    now = time.time()
+    if now - last_response_time > 10:
+        speak_response(random.choice(responses))
+        last_response_time = now
+
+last_response_time = 0
+current_theme_dark = True
+gaming_mode = False
+laser_mouse_mode = False
+chatbot_mode = False
+screen_width, screen_height = pyautogui.size()
+
+# --- Gesture Logic ---
+def is_fist(hand):
+    tips = [8, 12, 16, 20]
+    return all(hand.landmark[tip].y > hand.landmark[tip - 2].y for tip in tips)
+
+def get_finger_position(hand, frame):
+    h, w, _ = frame.shape
+    return int(hand.landmark[8].x * w), int(hand.landmark[8].y * h)
+
+def get_depth(hand):
+    return hand.landmark[8].z
+
+# --- UI Boxes ---
+boxes = [
+    {"x": 200, "y": 200, "w": 150, "h": 100, "color": (0, 255, 255), "label": "Theme Toggle"},
+    {"x": 800, "y": 200, "w": 150, "h": 100, "color": (100, 200, 255), "label": "Launch App"},
+    {"x": 200, "y": 400, "w": 180, "h": 100, "color": (0, 200, 255), "label": "Launch Game"},
+    {"x": 640, "y": 400, "w": 180, "h": 100, "color": (255, 180, 50), "label": "Gaming Theme"},
+    {"x": 860, "y": 400, "w": 180, "h": 100, "color": (0, 255, 100), "label": "RGB Lights"},
+    {"x": 650, "y": 600, "w": 200, "h": 120, "color": (255, 0, 200), "label": "Gaming Mode"},
+    {"x": 1080, "y": 600, "w": 200, "h": 200, "color": (100, 100, 255), "label": "Laser Mouse"},
+    {"x": 860, "y": 600, "w": 200, "h": 120, "color": (200, 100, 255), "label": "Chatbot"}
+]
+
+drag_state = {"active": False, "index": -1, "triggered": False}
+hover_start_time = {}
+
+def handle_box_action(label, frame):
+    global current_theme_dark, gaming_mode, laser_mouse_mode, chatbot_mode
+    if label == "Theme Toggle":
+        current_theme_dark = not current_theme_dark
+        frame[:] = (0, 0, 0) if current_theme_dark else (255, 255, 255)
+        speak_response("Theme switched, sir.")
+    elif label == "Launch Game":
+        os.system("start steam://rungameid/730")
+        speak_response("Launching game, sir.")
+    elif label == "Discord Online":
+        speak_response("Discord status set to Gaming Mode, sir.")
+    elif label == "Gaming Theme":
+        set_wallpaper(r"c:\Users\pjtru\OneDrive\Projects\Screenshot 2025-04-22 213533.png")
+        speak_response("Gaming wallpaper activated, sir.")
+    elif label == "RGB Lights":
+        speak_response("RGB lights pulsing, sir.")
+    elif label == "Voice Control":
+        speak_response("Voice command test. Hello, sir.")
+    elif label == "Launch App":
+        os.system("start notepad")
+        speak_response("Launching application, sir.")
+    elif label == "Exit Fullscreen":
+        cv2.setWindowProperty("JARVIS Laser Dashboard", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
+        speak_response("Exiting fullscreen, sir.")
+    elif label == "Gaming Mode":
+        gaming_mode = not gaming_mode
+        os.system("start \"\" \"c:\\Program Files (x86)\\Sony\\PS Remote Play\\RemotePlay.exe\"")
+        speak_response("Gaming mode engaged. PS Remote Play launched, sir.")
+    elif label == "Laser Mouse":
+        laser_mouse_mode = not laser_mouse_mode
+        speak_response("Laser Mouse mode " + ("activated, sir." if laser_mouse_mode else "deactivated, sir."))
+    elif label == "Chatbot":
+        chatbot_mode = not chatbot_mode
+        speak_response("Chatbot " + ("activated, sir." if chatbot_mode else "closed, sir."))
+
+
+def draw_laser(frame, start, end, on_target):
+    color = (0, 255, 0) if on_target else (0, 0, 255)
+    cv2.line(frame, start, end, color, 3)
+
+def draw_boxes(frame, finger_x, finger_y, depth, handLms):
+    global drag_state, hover_start_time
+
+    for i, box in enumerate(boxes):
+        depth_closeness = max(min(1 - (depth + 0.3) * 2.5, 1), 0)
+        scale_factor = 1 + 0.2 * depth_closeness
+
+        box_w = int(box["w"] * scale_factor)
+        box_h = int(box["h"] * scale_factor)
+
+        offset_x = (box_w - box["w"]) // 2
+        offset_y = (box_h - box["h"]) // 2
+        x = box["x"] - offset_x
+        y = box["y"] - offset_y
+
+        hovering = x < finger_x < x + box_w and y < finger_y < y + box_h
+        thickness = 2 if not hovering else 5
+
+        if hovering and not drag_state["active"]:
+            drag_state["active"] = True
+            drag_state["index"] = i
+            say_random_response()
+
+        if drag_state["active"] and drag_state["index"] == i:
+            if not is_fist(handLms):  # drag
+                boxes[i]["x"] = finger_x
+                boxes[i]["y"] = finger_y
+            else:  # lock
+                speak_response("Panel locked in place, sir.")
+                drag_state = {"active": False, "index": -1, "triggered": False}
+
+        if hovering:
+            if i not in hover_start_time:
+                hover_start_time[i] = time.time()
+            elif time.time() - hover_start_time[i] >= 5 and not drag_state["triggered"]:
+                handle_box_action(box["label"], frame)
+                drag_state["triggered"] = True
+        else:
+            if i in hover_start_time:
+                del hover_start_time[i]
+
+        overlay = frame.copy()
+        box_color = box["color"]
+        if gaming_mode:
+            box_color = tuple(min(255, c + 50) for c in box_color)
+        cv2.rectangle(overlay, (x, y), (x + box_w, y + box_h), box_color, -1)
+        cv2.addWeighted(overlay, depth_closeness * 0.4, frame, 1 - depth_closeness * 0.4, 0, frame)
+
+        cv2.rectangle(frame, (x, y), (x + box_w, y + box_h), box_color, thickness)
+        cv2.putText(frame, box["label"], (x + 10, y + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2)
+import time
+
+# --- Define the JARVIS brain ---
+def get_chatbot_response(user_input):
+    user_input = user_input.lower()
+
+    if "your name" in user_input:
+        return "I am JARVIS, your personal assistant."
+    elif "time" in user_input:
+        current_time = time.strftime("%I:%M %p")
+        return f"The current time is {current_time}."
+    elif "date" in user_input:
+        current_date = time.strftime("%B %d, %Y")
+        return f"Today's date is {current_date}."
+    elif "how are you" in user_input:
+        return "I'm doing great, thanks for asking!"
+    elif "who made you" in user_input or "who created you" in user_input:
+        return "I was created by Pace Truitt."
+    elif "weather" in user_input:
+        return "I'm not connected to live weather data yet."
+    elif "joke" in user_input:
+        return "Why don't scientists trust atoms? Because they make up everything!"
+    elif "favorite color" in user_input:
+        return "I like blue, just like the energy arc reactor!"
+    elif "shutdown" in user_input:
+        return "Shutting down. Goodbye!"
+    elif "what is your purpose" in user_input:
+        return "My purpose is to assist you with your tasks and provide information."
+    elif "play music" in user_input:
+        return "Playing your favorite song  https://open.spotify.com/track/39NBpzpV7oY6Yfb9AhfyVz?si=d3800f3de3914011."
+    elif "hello" in user_input or "hi" in user_input:
+        return "Hello, sir.",
+    elif "wassup" in user_input or "what's up" in user_input:
+        return "nothing much, just waiting to assist you, sir."
+
+        return "I'm not sure how to answer that yet."
+
+# --- Main Loop ---
+user_input = ""
+last_listen_time = 0
+listen_delay = 3  # seconds between listens
+question_words = ["what", "who", "where", "when", "why", "how", "can", "do", "does", "is", "are", "will", "should", "hello", "hi", "wassup"]
+
+while True:
+    success, frame = cap.read()
+    if not success:
+        break
+
+    frame = cv2.flip(frame, 1)
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    result = hands.process(rgb)
+
+    if result.multi_hand_landmarks:
+        for handLms in result.multi_hand_landmarks:
+            finger_x, finger_y = get_finger_position(handLms, frame)
+            depth = get_depth(handLms)
+
+            draw_boxes(frame, finger_x, finger_y, depth, handLms)
+
+            if laser_mouse_mode:
+                pyautogui.moveTo(finger_x * screen_width // 1280, finger_y * screen_height // 720)
+
+    # --- CHATBOT MODE ---
+    if chatbot_mode:
+        current_time = time.time()
+        if current_time - last_listen_time > listen_delay:
+            print("Listening...")
+            user_input = listen_to_user()
+
+            if user_input:
+                print(f"You said: {user_input}")
+
+                # Check if it's a question
+                if "?" in user_input or any(word in user_input.lower().split() for word in question_words):
+                    # Ask JARVIS brain
+                    response = get_chatbot_response(user_input)
+
+                    if response:
+                        print(f"JARVIS: {response}")
+                    else:
+                        print("JARVIS: Sorry, I couldn't understand that.")
+                else:
+                    print("JARVIS: Please ask a question.")
+
+            last_listen_time = current_time
+
+    # --- SHOW FRAME ---
+    cv2.imshow("JARVIS Laser Dashboard", frame)
+
+    if cv2.waitKey(1) & 0xFF == 27:  # ESC to exit
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+
